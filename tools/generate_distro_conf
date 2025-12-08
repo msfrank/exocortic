@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+
+from argparse import ArgumentParser
+from json import loads, dump
+from pathlib import Path
+
+parser = ArgumentParser(prog="generate_distro_conf", description="")
+parser.add_argument('--destination-root', default=os.path.join(os.getcwd(), 'dist'))
+parser.add_argument('--destination-bindir', default=None)
+parser.add_argument('--destination-libdir', default=None)
+parser.add_argument('--destination-sysconfdir', default=None)
+parser.add_argument('--destination-datarootdir', default=None)
+parser.add_argument('--system-root', dest='system_roots', action='append', default=[])
+parser.add_argument('--vendor-root', dest='vendor_roots', action='append', default=[])
+parser.add_argument('--binary', dest='binaries', action='append', default=[])
+parser.add_argument('--binary-json', dest='binary_jsons', action='append', default=[])
+parser.add_argument('--library', dest='libraries', action='append', default=[])
+parser.add_argument('--library-json', dest='library_jsons', action='append', default=[])
+parser.add_argument('--debug', action='store_true')
+parser.add_argument('distro_conf')
+args = parser.parse_args()
+
+json_root = {}
+
+json_root['destinationRoot'] = args.destination_root
+
+if args.destination_bindir:
+    json_root['binaryDir'] = args.destination_bindir
+if args.destination_libdir:
+    json_root['libraryDir'] = args.destination_libdir
+if args.destination_sysconfdir:
+    json_root['sysconfDir'] = args.destination_sysconfdir
+if args.destination_datarootdir:
+    json_root['datarootDir'] = args.destination_datarootdir
+
+system_roots = []
+for system_root in args.system_roots:
+    system_roots.append(system_root)
+json_root['systemRoots'] = system_roots
+
+vendor_roots = []
+for vendor_root in args.vendor_roots:
+    vendor_roots.append(vendor_root)
+json_root['vendorRoots'] = vendor_roots
+
+#
+#
+#
+
+binaries = []
+
+for binary in args.binaries:
+    binaries.append(binary)
+
+for binary_json in args.binary_jsons:
+    json = loads(binary_json)
+    binaries.append(json)
+
+json_root['binaries'] = binaries
+
+#
+#
+#
+
+libraries = []
+
+for library in args.libraries:
+    libraries.append(library)
+
+for library_json in args.library_jsons:
+    json = loads(library_json)
+    libraries.append(json)
+
+json_root['libraries'] = libraries
+
+#
+#
+#
+
+with open(args.distro_conf, 'w') as f:
+    dump(json_root, f, indent=2)

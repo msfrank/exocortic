@@ -20,10 +20,9 @@ class XocoDist(ConanFile):
         )
 
     requires = (
-        'chord/0.0.1',
         'lyric/0.0.1',
         'tempo/0.0.1',
-        'zuri/0.0.1',
+        #'zuri/0.0.1',
         )
 
     def layout(self):

@@ -9,12 +9,14 @@ from graphlib import TopologicalSorter
 from json import load
 from pathlib import Path
 from queue import SimpleQueue
+from shutil import copy, rmtree
 
 from distro.patch_ops import make_patcher
 
 parser = ArgumentParser(prog="make_distro", description="")
 parser.add_argument('--source-root', default=os.getcwd())
 parser.add_argument('--destination-root', default=os.path.join(os.getcwd(), "dist"))
+parser.add_argument('--clean', action='store_true')
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('distro_conf')
 args = parser.parse_args()
@@ -33,10 +35,10 @@ sourceroot = distro_json.get('sourceRoot', args.source_root)
 destroot = distro_json.get('destinationRoot', args.destination_root)
 
 # destination directories
-bindir = distro_json.get('binaryDir', os.path.join(args.destination_root, 'bin'))
-libdir = distro_json.get('libraryDir', os.path.join(args.destination_root, 'lib'))
-sysconfdir = distro_json.get('sysconfDir', os.path.join(args.destination_root, 'etc'))
-datarootdir = distro_json.get('datarootDir', os.path.join(args.destination_root, 'share'))
+bindir = distro_json.get('binaryDir', os.path.join(destroot, 'bin'))
+libdir = distro_json.get('libraryDir', os.path.join(destroot, 'lib'))
+sysconfdir = distro_json.get('sysconfDir', os.path.join(destroot, 'etc'))
+datarootdir = distro_json.get('datarootDir', os.path.join(destroot, 'share'))
 
 # directories containing executables and shared libraries which are part of
 # the system and do not need to be copied to the destination
@@ -165,8 +167,7 @@ while not pending_paths.empty():
         return True
 
     if unexpected_lib(path):
-        print(f"unexpected transitive library {path}: library is not in a vendor root")
-        break
+        raise Exception(f"unexpected transitive library {path}: library is not in a vendor root")
 
     print(f"scanning transitive library {path}")
 
@@ -183,6 +184,13 @@ while not pending_paths.empty():
 #
 # install artifacts into the destination.
 #
+
+# if --clean is specified and destroot exists the remove it first
+if args.clean and os.path.exists(destroot):
+    rmtree(destroot)
+
+# create the destination root
+os.mkdir(destroot)
 
 # generate the artifact ordering
 artifacts_order = deps_graph.static_order()
@@ -201,7 +209,22 @@ def get_destination(artifact: Artifact) -> Path:
         path / artifact.destination
     return path / artifact.source.name
 
+def adjust_rpath(artifact: Artifact, dest_path):
+    if artifact.type in (Artifact.Type.CONFIG, Artifact.Type.DATA):
+        return
+    print(f"adjusting rpath for {artifact.type} artifact {dest_path}")
+    patcher = make_patcher(dest_path)
+    if artifact.type == Artifact.Type.BINARY:
+        patcher.set_rpath(patcher.origin() / ".." / "lib")
+    elif artifact.type == Artifact.Type.LIBRARY:
+        patcher.set_rpath(patcher.origin())
+    else:
+        raise Exception(f"cannot adjust rpath for {artifact.type} artifact {dest_path}")
+
 for path in artifacts_order:
     artifact = artifacts[Path(path)]
     dest_path = get_destination(artifact)
     print(f"installing {artifact.type} artifact {artifact.source} to {dest_path}")
+    os.makedirs(dest_path.parent, exist_ok=True)
+    copy(artifact.source, dest_path)
+    adjust_rpath(artifact, dest_path)

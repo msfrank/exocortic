@@ -1,0 +1,16 @@
+{
+    "sourceRoot": "/Users/msfrank/.conan2/p/b/tempo6f5dc767940b0/p",
+
+    "destinationRoot": "dist",
+
+    "systemRoots": @SYSTEM_ROOTS_LIST_JSON@,
+
+    "vendorRoots": [
+        "/Users/msfrank/.conan2/p",
+        "/Users/runner/.conan2/p"
+    ],
+
+    "binaries": [
+        "@TEMPO_GENERATE_KEYPAIR_PATH@"
+    ]
+}

@@ -6,7 +6,7 @@ import os.path
 import platform
 import subprocess
 
-from pathlib import Path
+from pathlib import Path, PurePath
 
 class PatchOps:
 
@@ -19,13 +19,16 @@ class PatchOps:
     def list_rpaths(self) -> list[str]:
         raise NotImplementedError()
 
-    def add_rpath(self, rpath: str):
+    def add_rpath(self, rpath: typing.Union[PurePath,str]):
         raise NotImplementedError()
 
-    def remove_rpath(self, rpath: str):
+    def remove_rpath(self, rpath: typing.Union[PurePath,str]):
         raise NotImplementedError()
 
-    def set_rpath(self, rpath: str):
+    def set_rpath(self, *rpath: typing.Union[PurePath,str]):
+        raise NotImplementedError()
+
+    def origin(self) -> PurePath:
         raise NotImplementedError()
 
 
@@ -146,17 +149,21 @@ class DarwinPatcher(PatchOps):
         return rpaths
 
     def add_rpath(self, rpath):
-        res = subprocess.run(['/usr/bin/install_name_tool', '-add_rpath', rpath, self._path], capture_output=True, text=True)
+        res = subprocess.run(['/usr/bin/install_name_tool', '-add_rpath', str(rpath), self._path], capture_output=True, text=True)
         res.check_returncode()
 
     def remove_rpath(self, rpath):
-        res = subprocess.run(['/usr/bin/install_name_tool', '-delete_rpath', rpath, self._path], capture_output=True, text=True)
+        res = subprocess.run(['/usr/bin/install_name_tool', '-delete_rpath', str(rpath), self._path], capture_output=True, text=True)
         res.check_returncode()
 
-    def set_rpath(self, rpath):
-        for curr in self.list_rpaths():
-            self.remove_rpath(curr)
-        self.add_rpath(rpath)
+    def set_rpath(self, *rpath):
+        for prev in self.list_rpaths():
+            self.remove_rpath(prev)
+        for curr in rpath:
+            self.add_rpath(curr)
+
+    def origin(self) -> PurePath:
+        return PurePath('@loader_path')
 
 
 def make_patcher(shared_library_path: Path) -> PatchOps:
