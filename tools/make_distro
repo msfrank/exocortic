@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+
+from argparse import ArgumentParser
+from enum import Enum
+from graphlib import TopologicalSorter
+from json import load
+from pathlib import Path
+from queue import SimpleQueue
+
+from distro.patch_ops import make_patcher
+
+parser = ArgumentParser(prog="make_distro", description="")
+parser.add_argument('--source-root', default=os.getcwd())
+parser.add_argument('--destination-root', default=os.path.join(os.getcwd(), "dist"))
+parser.add_argument('--debug', action='store_true')
+parser.add_argument('distro_conf')
+args = parser.parse_args()
+
+#
+# parse the supplied distro configuration file.
+#
+
+with open(args.distro_conf, 'r') as f:
+    distro_json = load(f)
+
+# source root
+sourceroot = distro_json.get('sourceRoot', args.source_root)
+
+# destination root
+destroot = distro_json.get('destinationRoot', args.destination_root)
+
+# destination directories
+bindir = distro_json.get('binaryDir', os.path.join(args.destination_root, 'bin'))
+libdir = distro_json.get('libraryDir', os.path.join(args.destination_root, 'lib'))
+sysconfdir = distro_json.get('sysconfDir', os.path.join(args.destination_root, 'etc'))
+datarootdir = distro_json.get('datarootDir', os.path.join(args.destination_root, 'share'))
+
+# directories containing executables and shared libraries which are part of
+# the system and do not need to be copied to the destination
+vendor_roots = []
+for vendor_root in distro_json.get('vendorRoots', []):
+    vendor_roots.append(Path(vendor_root))
+
+# directories containing executables and shared libraries which are copied to
+# the destination and also require fixups
+system_roots = []
+for system_root in distro_json.get('systemRoots', []):
+    system_roots.append(Path(system_root))
+
+#
+# construct the set of artifacts from the distro configuration.
+#
+
+class Artifact(object):
+
+    class Type(Enum):
+        BINARY = 1, 'binary'
+        LIBRARY = 2, 'library'
+        CONFIG = 3, 'config'
+        DATA = 4, 'data'
+
+    def __init__(self, type: Type, source: str, destination: str = None, createDirectories: bool = False):
+        self.type = type
+        self.source = Path(source)
+        self.destination = Path(destination) if destination else None
+        self.createDirectories = createDirectories
+
+    def __hash__(self):
+        return hash(self.source)
+
+    def __eq__(self, other):
+        return self.source == other.source
+
+artifacts = {}
+
+# process each list element in binaries
+for config in distro_json.get('binaries', []):
+    source = None
+    destination = None
+    createDirectories = False
+
+    if type(config) == str:
+        source = config
+    elif type(config) == dict:
+        source = config['source']
+        destination = config['destination']
+        createDirectories = config['createDirectories']
+    else:
+        raise Exception("invalid configuration")
+
+    if not os.path.isabs(source):
+        source = os.path.normpath(os.path.join(sourceroot, source))
+
+    artifact = Artifact(Artifact.Type.BINARY, source, destination, createDirectories)
+    if artifact.source in artifacts:
+        raise Exception(f"artifact {source} already exists")
+    artifacts[artifact.source] = artifact
+
+# process each list element in libraries
+for config in distro_json.get('libraries', []):
+    source = None
+    destination = None
+    createDirectories = False
+
+    if type(config) == str:
+        source = config
+    elif type(config) == dict:
+        source = config['source']
+        destination = config['destination']
+        createDirectories = config['createDirectories']
+    else:
+        raise Exception("invalid configuration")
+
+    if not os.path.isabs(source):
+        source = os.path.normpath(os.path.join(sourceroot, source))
+
+    artifact = Artifact(Artifact.Type.LIBRARY, source, destination, createDirectories)
+    if artifact.source in artifacts:
+        raise Exception(f"artifact {source} already exists")
+    artifacts[artifact.source] = artifact
+
+#
+# scan artifacts to find all transitive dependencies and add each
+# dependency to the set of artifacts.
+#
+
+pending_paths = SimpleQueue()
+deps_graph = TopologicalSorter()
+
+# scan explicitly specified binaries and libraries
+for _,artifact in artifacts.items():
+    if not artifact.type in (Artifact.Type.BINARY, Artifact.Type.LIBRARY):
+        continue
+    path = str(artifact.source)
+    print(f"scanning declared artifact {artifact.source}")
+    patcher = make_patcher(artifact.source)
+    exe = path if artifact.type == Artifact.Type.BINARY else None
+    for lib in patcher.list_dynamic_libs():
+        lib_path = patcher.get_absolute_path_for_lib(lib, exe)
+        pending_paths.put((lib_path, path))
+
+# scan transitive libraries
+while not pending_paths.empty():
+    path, target_path = pending_paths.get()
+    if Path(path) in artifacts:
+        continue
+
+    def ignored_lib(p: str) -> bool:
+        for system_root in system_roots:
+            if system_root in Path(p).parents:
+                return True
+        return False
+
+    if ignored_lib(path):
+        print(f"skipping transitive library {path}: library is in a system root")
+        continue
+
+    def unexpected_lib(p: str) -> bool:
+        for vendor_root in vendor_roots:
+            if vendor_root in Path(p).parents:
+                return False
+        return True
+
+    if unexpected_lib(path):
+        print(f"unexpected transitive library {path}: library is not in a vendor root")
+        break
+
+    print(f"scanning transitive library {path}")
+
+    patcher = make_patcher(path)
+
+    for lib in patcher.list_dynamic_libs():
+        lib_path = patcher.get_absolute_path_for_lib(lib, None)
+        pending_paths.put((lib_path,path))
+
+    artifact = Artifact(Artifact.Type.LIBRARY, path)
+    artifacts[artifact.source] = artifact
+    deps_graph.add(target_path, path)
+
+#
+# install artifacts into the destination.
+#
+
+# generate the artifact ordering
+artifacts_order = deps_graph.static_order()
+
+def get_destination(artifact: Artifact) -> Path:
+    path = None
+    if artifact.type == Artifact.Type.BINARY:
+        path = Path(bindir)
+    elif artifact.type == Artifact.Type.LIBRARY:
+        path = Path(libdir)
+    elif artifact.type == Artifact.Type.CONFIG:
+        path = Path(sysconfdir)
+    elif artifact.type == Artifact.Type.DATA:
+        path = Path(datarootdir)
+    if artifact.destination is not None:
+        path / artifact.destination
+    return path / artifact.source.name
+
+for path in artifacts_order:
+    artifact = artifacts[Path(path)]
+    dest_path = get_destination(artifact)
+    print(f"installing {artifact.type} artifact {artifact.source} to {dest_path}")
