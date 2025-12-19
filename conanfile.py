@@ -5,13 +5,15 @@ from conan.tools.build import check_min_cppstd
 from conan.tools.cmake import CMake, CMakeDeps, CMakeToolchain, cmake_layout
 from conan.tools.files import copy
 
-class XocoDist(ConanFile):
-    name = 'xoco-dist'
+class Exocortic(ConanFile):
+    name = 'exocortic'
     version = '0.0.1'
 
+    # enforce full mode when resolving dependencies
+    package_id_non_embed_mode = "full_mode"
+    package_id_unknown_mode = "full_mode"
+
     settings = 'os', 'compiler', 'build_type', 'arch'
-    options = {'shared': [True, False], 'compiler.cppstd': ['17', '20'], 'build_type': ['Debug', 'Release']}
-    default_options = {'shared': True, 'compiler.cppstd': '20', 'build_type': 'Debug'}
 
     exports_sources = (
         'CMakeLists.txt',
@@ -22,7 +24,7 @@ class XocoDist(ConanFile):
     requires = (
         'lyric/0.0.1',
         'tempo/0.0.1',
-        #'zuri/0.0.1',
+        'zuri/0.0.1',
         )
 
     def layout(self):
@@ -30,7 +32,7 @@ class XocoDist(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
-        tc.variables['XOCO_DIST_VERSION'] = self.version
+        tc.variables['EXOCORTIC_VERSION'] = self.version
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()
@@ -38,8 +40,7 @@ class XocoDist(ConanFile):
     def build(self):
         cmake = CMake(self)
         cmake.configure()
-        cmake.build()
         cmake.build(target='package')
 
     def package(self):
-        copy(self, 'xoco-dist-*', join(self.build_folder, 'dist'), join(self.package_folder, 'dist'))
+        copy(self, 'exocortic-*', self.build_folder, join(self.package_folder, 'dist'))

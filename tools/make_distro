@@ -148,6 +148,7 @@ for _,artifact in artifacts.items():
 while not pending_paths.empty():
     path, target_path = pending_paths.get()
     if Path(path) in artifacts:
+        deps_graph.add(target_path, path)
         continue
 
     def ignored_lib(p: str) -> bool:
