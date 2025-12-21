@@ -26,7 +26,6 @@ on:
         required: true
 
 permissions:
-  id-token: write
   contents: read
 
 env:
