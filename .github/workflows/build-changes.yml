@@ -1,0 +1,54 @@
+name: build-changes.yml
+on:
+  workflow_call:
+    inputs:
+      build_order:
+        required: true
+        type: string
+      build_type:
+        required: true
+        type: string
+      build_runner:
+        required: true
+        type: string
+      conan_profile:
+        required: true
+        type: string
+      install_dependencies_script:
+        required: false
+        type: string
+    secrets:
+      CONAN_CLIENT_CERT:
+        required: true
+      CONAN_CLIENT_KEY:
+        required: true
+      CONAN_CREDENTIALS_JSON:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+  attestations: write
+
+env:
+  ACTIONS_STEP_DEBUG: true
+
+jobs:
+
+  build-changes:
+    name: Build all out-of-date packages
+
+    if: ${{ inputs.build_order != '[]' }}
+    strategy:
+      max-parallel: 1
+      matrix:
+        build-order: ${{ fromJSON(inputs.build_order) }}
+
+    uses: ./.github/workflows/build-package.yml
+    secrets: inherit
+    with:
+      package_ref: ${{ matrix.build-order }}
+      build_runner: ${{ inputs.build_runner }}
+      build_type: ${{ inputs.build_type }}
+      conan_profile: ${{ inputs.conan_profile }}
+      install_dependencies_script: ${{ inputs.install_dependencies_script }}

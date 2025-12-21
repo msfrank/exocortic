@@ -1,0 +1,27 @@
+name: Build and upload Exocortic and all dependencies for POSIX platforms
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+
+  build-posix:
+    uses: ./.github/workflows/build-distro.yml
+
+    strategy:
+      matrix:
+        platform: ${{ fromJSON(vars.POSIX_PLATFORMS) }}
+
+    secrets: inherit
+    with:
+      build_type: ${{ matrix.platform.build_type }}
+      build_runner: ${{ matrix.platform.build_runner }}
+      conan_profile: ${{ matrix.platform.conan_profile }}
+      install_dependencies_script: ${{ matrix.platform.install_dependencies_script }}
+
+    name: "Build ${{ matrix.platform.conan_profile }}"

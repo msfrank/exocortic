@@ -1,0 +1,86 @@
+name: build-package.yml
+on:
+  workflow_call:
+    inputs:
+      package_ref:
+        required: true
+        type: string
+      build_type:
+        required: true
+        type: string
+      build_runner:
+        required: true
+        type: string
+      conan_profile:
+        required: true
+        type: string
+      install_dependencies_script:
+        required: false
+        type: string
+    secrets:
+      CONAN_CLIENT_CERT:
+        required: true
+      CONAN_CLIENT_KEY:
+        required: true
+      CONAN_CREDENTIALS_JSON:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+  attestations: write
+
+env:
+  ACTIONS_STEP_DEBUG: true
+
+jobs:
+
+  build-package:
+    name: Build ${{ inputs.package_ref }}
+    runs-on: ${{ inputs.build_runner }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        if: ${{ inputs.install_dependencies_script != '' }}
+        run: ${{ inputs.install_dependencies_script }}
+
+      - name: Setup Conan
+        uses: conan-io/setup-conan@v1
+        id: setup-conan
+        with:
+          config_urls: "https://github.com/msfrank/conan-config.git"
+
+      - name: Configure Conan storage
+        id: configure-conan-storage
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+        run: |
+          sudo python3 $CONAN_HOME_BIN/make_conan_storage --owner $USER --output-path /tmp/conan_storage_path
+          echo "storage-path=$(cat /tmp/conan_storage_path)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Conan global.conf
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+          CONAN_CLIENT_CERT: ${{ secrets.CONAN_CLIENT_CERT }}
+          CONAN_CLIENT_KEY: ${{ secrets.CONAN_CLIENT_KEY }}
+          CONAN_CREDENTIALS_JSON: ${{ secrets.CONAN_CREDENTIALS_JSON }}
+        run: |
+          python3 $CONAN_HOME_BIN/generate_global_conf \
+            --conan-home ${{ steps.setup-conan.outputs.conan-home }} \
+            ${{ steps.configure-conan-storage.outputs.storage-path }}
+
+      - name: Build package
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+        run: |
+          conan remote enable develop
+          conan remote enable integ
+          conan remote auth --force integ
+          python3 $CONAN_HOME_BIN/install_and_upload_package \
+            --debug \
+            --conan-profile ${{ inputs.conan_profile }} \
+            --clean \
+            ${{ inputs.package_ref }} integ

@@ -1,0 +1,163 @@
+name: build-distro.yml
+on:
+  workflow_call:
+    inputs:
+      build_type:
+        required: true
+        type: string
+      build_runner:
+        required: true
+        type: string
+      conan_profile:
+        required: true
+        type: string
+      install_dependencies_script:
+        required: false
+        type: string
+    secrets:
+      CONAN_CLIENT_CERT:
+        required: true
+      CONAN_CLIENT_KEY:
+        required: true
+      CONAN_CREDENTIALS_JSON:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+  attestations: write
+
+env:
+  ACTIONS_STEP_DEBUG: true
+
+jobs:
+
+  generate-build-order-matrix:
+    name: Generate the build order matrix
+    runs-on: ${{ inputs.build_runner }}
+
+    outputs:
+      package-refs: ${{ steps.determine-changes.outputs.package-refs }}
+      build-order: ${{ steps.determine-changes.outputs.build-order }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        if: ${{ inputs.install_dependencies_script != '' }}
+        run: ${{ inputs.install_dependencies_script }}
+
+      - name: Setup Conan
+        uses: conan-io/setup-conan@v1
+        id: setup-conan
+        with:
+          config_urls: "https://github.com/msfrank/conan-config.git"
+
+      - name: Configure Conan storage
+        id: configure-conan-storage
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+        run: |
+          sudo python3 $CONAN_HOME_BIN/make_conan_storage --owner $USER --output-path /tmp/conan_storage_path
+          echo "storage-path=$(cat /tmp/conan_storage_path)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Conan global.conf
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+          CONAN_CLIENT_CERT: ${{ secrets.CONAN_CLIENT_CERT }}
+          CONAN_CLIENT_KEY: ${{ secrets.CONAN_CLIENT_KEY }}
+          CONAN_CREDENTIALS_JSON: ${{ secrets.CONAN_CREDENTIALS_JSON }}
+        run: |
+          python3 $CONAN_HOME_BIN/generate_global_conf \
+            --conan-home ${{ steps.setup-conan.outputs.conan-home }} \
+            ${{ steps.configure-conan-storage.outputs.storage-path }}
+
+      - name: Export recipe
+        run: |
+          conan export .
+
+      - name: Determine changes
+        id: determine-changes
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+        run: |
+          conan remote enable develop
+          conan remote enable build
+          python3 $CONAN_HOME_BIN/determine_changes \
+            --debug \
+            --conan-profile ${{ inputs.conan_profile }} \
+            --recipe-path . \
+            --package-refs-path /tmp/package-refs.json \
+            --build-order-path /tmp/build-order.json
+          echo "package-refs=$(cat /tmp/package-refs.json)" | tee -a "$GITHUB_OUTPUT"
+          echo "build-order=$(cat /tmp/build-order.json)" | tee -a "$GITHUB_OUTPUT"
+
+  build-distro:
+    name: Build all changed packages for the distribution
+    needs: generate-build-order-matrix
+
+    if: ${{ needs.generate-build-order-matrix.outputs.build-order != '[]' }}
+    uses: ./.github/workflows/build-changes.yml
+    secrets: inherit
+    with:
+      build_order: ${{ needs.generate-build-order-matrix.outputs.build-order }}
+      build_runner: ${{ inputs.build_runner }}
+      build_type: ${{ inputs.build_type }}
+      conan_profile: ${{ inputs.conan_profile }}
+      install_dependencies_script: ${{ inputs.install_dependencies_script }}
+
+  promote-platform:
+    name: Promote all changed packages for the platform
+    needs:
+      - generate-build-order-matrix
+      - build-distro
+    runs-on: ${{ inputs.build_runner }}
+
+    if: ${{ !failure() }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        if: ${{ inputs.install_dependencies_script != '' }}
+        run: ${{ inputs.install_dependencies_script }}
+
+      - name: Setup Conan
+        uses: conan-io/setup-conan@v1
+        id: setup-conan
+        with:
+          config_urls: "https://github.com/msfrank/conan-config.git"
+
+      - name: Configure Conan storage
+        id: configure-conan-storage
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+        run: |
+          sudo python3 $CONAN_HOME_BIN/make_conan_storage --owner $USER --output-path /tmp/conan_storage_path
+          echo "storage-path=$(cat /tmp/conan_storage_path)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Conan global.conf
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+          CONAN_CLIENT_CERT: ${{ secrets.CONAN_CLIENT_CERT }}
+          CONAN_CLIENT_KEY: ${{ secrets.CONAN_CLIENT_KEY }}
+          CONAN_CREDENTIALS_JSON: ${{ secrets.CONAN_CREDENTIALS_JSON }}
+        run: |
+          python3 $CONAN_HOME_BIN/generate_global_conf \
+            --conan-home ${{ steps.setup-conan.outputs.conan-home }} \
+            ${{ steps.configure-conan-storage.outputs.storage-path }}
+
+      - name: Promote packages to integ
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+        run: |
+          conan remote enable integ
+          conan remote enable develop
+          conan remote auth --force develop
+          echo '${{ needs.generate-build-order-matrix.outputs.package-refs }}' > /tmp/package-refs.json
+          python3 $CONAN_HOME_BIN/promote_packages \
+            --debug \
+            --package-refs-path /tmp/package-refs.json \
+            --clean \
+            integ develop
