@@ -77,7 +77,6 @@ jobs:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
           conan remote enable integ
-          conan remote enable build
           python3 $CONAN_HOME_BIN/determine_changes \
             --debug \
             --conan-profile ${{ inputs.conan_profile }} \
