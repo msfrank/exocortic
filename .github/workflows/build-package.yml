@@ -74,7 +74,6 @@ jobs:
         env:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
-          conan remote enable develop
           conan remote enable integ
           conan remote auth --force integ
           python3 $CONAN_HOME_BIN/install_and_upload_package \
