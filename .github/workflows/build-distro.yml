@@ -142,7 +142,7 @@ jobs:
             --conan-home ${{ steps.setup-conan.outputs.conan-home }} \
             ${{ steps.configure-conan-storage.outputs.storage-path }}
 
-      - name: Promote packages to integ
+      - name: Promote dependencies to develop
         env:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
