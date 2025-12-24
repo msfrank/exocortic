@@ -4,6 +4,7 @@ import typing
 
 import os.path
 import platform
+import re
 import subprocess
 
 from pathlib import Path, PurePath
@@ -109,7 +110,7 @@ class DarwinPatcher(PatchOps):
                 raise Exception(f"failed to resolve rpath {rpath}: directory {full_path} is missing")
             return full_path
         else:
-            raise Exception(f"failed to resolve rpath {rpath} (loader: {self._path}, exe: {exe}")
+            raise Exception(f"failed to resolve rpath {rpath} (loader: {self._path}, exe: {exe})")
 
     def get_absolute_path_for_lib(self, lib: str, exe: typing.Union[str,None]) -> str:
         if os.path.isabs(lib):
@@ -135,7 +136,7 @@ class DarwinPatcher(PatchOps):
                 full_path = os.path.join(resolved_rpath, *parts[1:])
                 if os.path.isfile(full_path):
                     return full_path
-            raise Exception(f"failed to determine path for {lib}: no library found in any @rpath")
+            raise Exception(f"failed to determine path for {lib}: no library found in any rpath")
         else:
             raise Exception(f"failed to determine path for {lib}")
 
@@ -166,6 +167,86 @@ class DarwinPatcher(PatchOps):
         return PurePath('@loader_path')
 
 
+class LinuxPatcher(PatchOps):
+    """
+    """
+
+    def __init__(self, path: Path):
+        self._path = path
+        self._isexecutable = None
+        self._needed = None
+        self._rpaths = None
+
+    def _parse_needed(self):
+        res = subprocess.run(['/usr/bin/patchelf', '--print-needed', self._path], capture_output=True, text=True)
+        res.check_returncode()
+        return res.stdout.splitlines()
+
+    def _parse_runpath(self):
+        res = subprocess.run(['/usr/bin/patchelf', '--print-rpath', self._path], capture_output=True, text=True)
+        res.check_returncode()
+        return res.stdout.split(':')
+
+    def is_executable(self) -> bool:
+        if self._isexecutable is None:
+            res = subprocess.run(['/usr/bin/patchelf', '--print-interpreter', self._path], capture_output=True, text=True)
+            if res.returncode == 0 and res.stdout != '':
+                self._isexecutable = True
+            else:
+                self._isexecutable = False
+        return self._isexecutable
+
+    def list_dynamic_libs(self) -> list[str]:
+        if self._needed is None:
+            self._needed = self._parse_needed()
+        return self._needed
+
+    def _resolve_rpath(self, rpath: str, exe: typing.Union[str,None]) -> str:
+        if os.path.isabs(rpath):
+            return rpath
+        parts = Path(rpath).parts
+        if parts[0] in ('$ORIGIN', '${ORIGIN}'):
+            origin = os.path.dirname(self._path)
+            full_path = os.path.join(origin, *parts[1:])
+            if not os.path.isdir(full_path):
+                raise Exception(f"failed to resolve rpath {rpath}: directory {full_path} is missing")
+            return full_path
+        else:
+            raise Exception(f"failed to resolve rpath {rpath} (loader: {self._path}, exe: {exe})")
+
+    def get_absolute_path_for_lib(self, lib: str, exe: typing.Union[str,None]) -> str:
+        if os.path.isabs(lib):
+            return lib
+        for rpath in self.list_rpaths():
+            resolved_rpath = self._resolve_rpath(rpath, exe)
+            full_path = os.path.join(resolved_rpath, lib)
+            if os.path.isfile(full_path):
+                return full_path
+        raise Exception(f"failed to determine path for {lib}: no library found in any rpath")
+
+    def list_rpaths(self) -> list[str]:
+        if self._rpaths is None:
+            self._rpaths = self._parse_runpath()
+        return self._rpaths
+
+    def add_rpath(self, rpath):
+        res = subprocess.run(['/usr/bin/patchelf', '--add-rpath', str(rpath), self._path], capture_output=True, text=True)
+        res.check_returncode()
+
+    def remove_rpath(self, rpath):
+        res = subprocess.run(['/usr/bin/patchelf', '--remote-rpath', str(rpath), self._path], capture_output=True, text=True)
+        res.check_returncode()
+
+    def set_rpath(self, *rpath):
+        for prev in self.list_rpaths():
+            self.remove_rpath(prev)
+        for curr in rpath:
+            self.add_rpath(curr)
+
+    def origin(self) -> PurePath:
+        return PurePath('$ORIGIN')
+
+
 def make_patcher(shared_library_path: Path) -> PatchOps:
     """
     Constructs an instance of PatchOps for the specified shared_library_path.
@@ -176,6 +257,6 @@ def make_patcher(shared_library_path: Path) -> PatchOps:
     if system == 'Darwin':
         return DarwinPatcher(shared_library_path)
     if system == 'Linux':
-        raise NotImplementedError()
+        return LinuxPatcher(shared_library_path)
 
-    raise RuntimeError("unknown platform " + system)
+    raise Exception(f"unknown platform {system}")
