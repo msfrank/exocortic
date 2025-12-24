@@ -176,16 +176,29 @@ class LinuxPatcher(PatchOps):
         self._isexecutable = None
         self._needed = None
         self._rpaths = None
+        self._libs = None
 
     def _parse_needed(self):
         res = subprocess.run(['/usr/bin/patchelf', '--print-needed', self._path], capture_output=True, text=True)
         res.check_returncode()
-        return res.stdout.splitlines()
+        return [ x for x in res.stdout.splitlines() if x != '' ]
 
     def _parse_runpath(self):
         res = subprocess.run(['/usr/bin/patchelf', '--print-rpath', self._path], capture_output=True, text=True)
         res.check_returncode()
-        return res.stdout.split(':')
+        return [ x for x in res.stdout.strip().split(':') if x != '' ]
+
+    def _parse_libs(self):
+        res = subprocess.run(['/usr/bin/ldd', self._path], capture_output=True, text=True)
+        res.check_returncode()
+        libs = {}
+        for line in res.stdout.splitlines():
+            needed,sep,rest = line.partition('=>')
+            if sep == '' and rest == '':
+                continue
+            full_path,_ = rest.strip().split(maxsplit=1)
+            libs[needed.strip()] = full_path
+        return libs
 
     def is_executable(self) -> bool:
         if self._isexecutable is None:
@@ -197,9 +210,9 @@ class LinuxPatcher(PatchOps):
         return self._isexecutable
 
     def list_dynamic_libs(self) -> list[str]:
-        if self._needed is None:
-            self._needed = self._parse_needed()
-        return self._needed
+        if self._libs is None:
+            self._libs = self._parse_libs()
+        return list(self._libs.values())
 
     def _resolve_rpath(self, rpath: str, exe: typing.Union[str,None]) -> str:
         if os.path.isabs(rpath):
@@ -220,9 +233,10 @@ class LinuxPatcher(PatchOps):
         for rpath in self.list_rpaths():
             resolved_rpath = self._resolve_rpath(rpath, exe)
             full_path = os.path.join(resolved_rpath, lib)
+            print(f"lib={lib} rpath={rpath} full_path={full_path}")
             if os.path.isfile(full_path):
                 return full_path
-        raise Exception(f"failed to determine path for {lib}: no library found in any rpath")
+        raise Exception(f"failed to determine path for {lib}: no library found in any of the following rpaths [{":".join(self.list_rpaths())}]")
 
     def list_rpaths(self) -> list[str]:
         if self._rpaths is None:
@@ -234,14 +248,13 @@ class LinuxPatcher(PatchOps):
         res.check_returncode()
 
     def remove_rpath(self, rpath):
-        res = subprocess.run(['/usr/bin/patchelf', '--remote-rpath', str(rpath), self._path], capture_output=True, text=True)
+        res = subprocess.run(['/usr/bin/patchelf', '--remove-rpath', str(rpath), self._path], capture_output=True, text=True)
         res.check_returncode()
 
     def set_rpath(self, *rpath):
-        for prev in self.list_rpaths():
-            self.remove_rpath(prev)
-        for curr in rpath:
-            self.add_rpath(curr)
+        runpath = ":".join([str(x) for x in rpath])
+        res = subprocess.run(['/usr/bin/patchelf', '--set-rpath', runpath, self._path], capture_output=True, text=True)
+        res.check_returncode()
 
     def origin(self) -> PurePath:
         return PurePath('$ORIGIN')
