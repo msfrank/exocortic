@@ -1,9 +1,13 @@
 name: Continuous integration
+run-name: Integrate dependency ${{ github.event.client_payload.requires }}
 
 on:
   repository_dispatch:
     types: [ integrate-dependency ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
 
