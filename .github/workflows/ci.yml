@@ -8,12 +8,11 @@ on:
 jobs:
 
   integrate-dependency:
+    name: Integrate dependency ${{ github.event.client_payload.requires }}
     runs-on: ubuntu-latest
 
     env:
-      DEP_NAME: ${{ github.event.client_payload.name }}
-      DEP_VERSION: ${{ github.event.client_payload.version }}
-      DEP_REQUIRES: "${{ github.event.client_payload.name }}/${{ github.event.client_payload.version }}"
+      DEP_REQUIRES: "${{ github.event.client_payload.requires }}"
       AUTHOR_NAME: '${{ github.actor }}'
       AUTHOR_EMAIL: '${{ github.actor }}@users.noreply.github.com'
       CONAN_LOCKFILE: "proposed-conan.lock"
@@ -48,13 +47,13 @@ jobs:
             --conan-home ${{ steps.setup-conan.outputs.conan-home }} \
             ${{ steps.configure-conan-storage.outputs.storage-path }}
 
-      - name: Update dependency in $CONAN_LOCKFILE
+      - name: Update dependency in ${{ env.CONAN_LOCKFILE }}
         env:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
-          conan lock update --requires="$DEP_REQUIRES" --lockfile=$CONAN_LOCKFILE
+          conan lock update --requires="$DEP_REQUIRES" --lockfile=$CONAN_LOCKFILE --lockfile-out=$CONAN_LOCKFILE
 
-      - name: Commit changes to $CONAN_LOCKFILE
+      - name: Commit changes to ${{ env.CONAN_LOCKFILE }}
         env:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
