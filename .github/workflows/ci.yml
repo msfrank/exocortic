@@ -16,6 +16,7 @@ jobs:
       DEP_REQUIRES: "${{ github.event.client_payload.name }}/${{ github.event.client_payload.version }}"
       AUTHOR_NAME: '${{ github.actor }}'
       AUTHOR_EMAIL: '${{ github.actor }}@users.noreply.github.com'
+      CONAN_LOCKFILE: "proposed-conan.lock"
 
     steps:
       - uses: actions/checkout@v6
@@ -47,18 +48,18 @@ jobs:
             --conan-home ${{ steps.setup-conan.outputs.conan-home }} \
             ${{ steps.configure-conan-storage.outputs.storage-path }}
 
-      - name: Update dependency in conan.lock
+      - name: Update dependency in $CONAN_LOCKFILE
         env:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
-          conan lock update --requires="$DEP_REQUIRES"
+          conan lock update --requires="$DEP_REQUIRES" --lockfile=$CONAN_LOCKFILE
 
-      - name: Commit changes to conan.lock
+      - name: Commit changes to $CONAN_LOCKFILE
         env:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
           git config --local user.name "$AUTHOR_NAME"
           git config --local user.email "$AUTHOR_EMAIL"
-          git add conan.lock
-          git commit -m "Update conan.lock: require $DEP_REQUIRES"
+          git add $CONAN_LOCKFILE
+          git commit -m "Update $CONAN_LOCKFILE: require $DEP_REQUIRES"
           git push
