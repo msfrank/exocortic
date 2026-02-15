@@ -1,0 +1,64 @@
+name: Continuous integration
+
+on:
+  repository_dispatch:
+    types: [ integrate-dependency ]
+  workflow_dispatch:
+
+jobs:
+
+  integrate-dependency:
+    runs-on: ubuntu-latest
+
+    env:
+      DEP_NAME: ${{ github.event.client_payload.name }}
+      DEP_VERSION: ${{ github.event.client_payload.version }}
+      DEP_REQUIRES: "${{ github.event.client_payload.name }}/${{ github.event.client_payload.version }}"
+      AUTHOR_NAME: '${{ github.actor }}'
+      AUTHOR_EMAIL: '${{ github.actor }}@users.noreply.github.com'
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Conan
+        uses: conan-io/setup-conan@v1
+        id: setup-conan
+        with:
+          config_urls: "https://github.com/msfrank/conan-config.git"
+
+      - name: Configure Conan storage
+        id: configure-conan-storage
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+        run: |
+          sudo python3 $CONAN_HOME_BIN/make_conan_storage --owner $USER --output-path /tmp/conan_storage_path
+          echo "storage-path=$(cat /tmp/conan_storage_path)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Conan global.conf
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+          CONAN_CLIENT_CERT: ${{ secrets.CONAN_CLIENT_CERT }}
+          CONAN_CLIENT_KEY: ${{ secrets.CONAN_CLIENT_KEY }}
+          CONAN_CREDENTIALS_JSON: ${{ secrets.CONAN_CREDENTIALS_JSON }}
+        run: |
+          python3 $CONAN_HOME_BIN/generate_global_conf \
+            --conan-home ${{ steps.setup-conan.outputs.conan-home }} \
+            ${{ steps.configure-conan-storage.outputs.storage-path }}
+
+      - name: Update dependency in conan.lock
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+        run: |
+          conan lock update --requires="$DEP_REQUIRES"
+
+      - name: Commit changes to conan.lock
+        env:
+          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
+        run: |
+          git config --local user.name "$AUTHOR_NAME"
+          git config --local user.email "$AUTHOR_EMAIL"
+          git add conan.lock
+          git commit -m "Update conan.lock: require $DEP_REQUIRES"
+          git push
