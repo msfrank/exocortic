@@ -65,4 +65,4 @@ jobs:
           git config --local user.email "$AUTHOR_EMAIL"
           git add $CONAN_LOCKFILE
           git commit -m "Update $CONAN_LOCKFILE: require $DEP_REQUIRES"
-          git push
+          git push https://${{ github.actor }}:${{ secrets.PAT_CONTENTS_RW_EXOCORTIC }}@github.com/${{ github.repository }}.git
