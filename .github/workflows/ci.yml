@@ -55,6 +55,7 @@ jobs:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
           conan lock update -vvv --requires="$DEP_REQUIRES" --lockfile=$CONAN_LOCKFILE --lockfile-out=$CONAN_LOCKFILE
+          set +e
           git diff --quiet -- $CONAN_LOCKFILE
           echo "diff-status=$?" | tee -a "$GITHUB_OUTPUT"
 
