@@ -17,8 +17,6 @@ jobs:
 
     env:
       DEP_REQUIRES: "${{ github.event.client_payload.requires }}"
-      AUTHOR_NAME: '${{ github.actor }}'
-      AUTHOR_EMAIL: '${{ github.actor }}@users.noreply.github.com'
       CONAN_LOCKFILE: "proposed-conan.lock"
 
     steps:
@@ -56,7 +54,7 @@ jobs:
         env:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
-          conan lock update --requires="$DEP_REQUIRES" --lockfile=$CONAN_LOCKFILE --lockfile-out=$CONAN_LOCKFILE
+          conan lock update -vvv --requires="$DEP_REQUIRES" --lockfile=$CONAN_LOCKFILE --lockfile-out=$CONAN_LOCKFILE
           git diff --quiet -- $CONAN_LOCKFILE
           echo "diff-status=$?" | tee -a "$GITHUB_OUTPUT"
 
@@ -66,8 +64,8 @@ jobs:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
           # configure git
-          git config --local user.name "$AUTHOR_NAME"
-          git config --local user.email "$AUTHOR_EMAIL"
+          git config --local user.name "CI Bot"
+          git config --local user.email "ci-bot-noreply@exocortical.systems"
           git config --unset "http.https://github.com/.extraheader"
           git remote set-url origin "https://x-access-token:${{secrets.PAT_CONTENTS_RW_EXOCORTIC}}@github.com/${{ github.repository }}.git/"
 
