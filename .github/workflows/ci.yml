@@ -22,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Setup Conan
@@ -61,14 +62,16 @@ jobs:
 
       - name: Commit changes to ${{ env.CONAN_LOCKFILE }}
         if: ${{ steps.update-lockfile.outputs.diff-status == '1' }}
+        env:
+          GIT_TRACE: 1
         run: |
           # configure git
           git config --local user.name "CI Bot"
           git config --local user.email "ci-bot-noreply@exocortical.systems"
-          git config --unset "http.https://github.com/.extraheader"
+          #git config --unset "http.https://github.com/.extraheader"
           echo "updated git config"
 
-          git remote set-url origin "https://x-access-token:${{secrets.PAT_CONTENTS_RW_EXOCORTIC}}@github.com/${{ github.repository }}.git/"
+          git remote set-url origin "https://${{secrets.PAT_CONTENTS_RW_EXOCORTIC}}@github.com/${{ github.repository }}.git"
           echo "set url for origin"
 
           # stage lock file
