@@ -52,17 +52,28 @@ jobs:
             ${{ steps.configure-conan-storage.outputs.storage-path }}
 
       - name: Update dependency in ${{ env.CONAN_LOCKFILE }}
+        id: update-lockfile
         env:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
           conan lock update --requires="$DEP_REQUIRES" --lockfile=$CONAN_LOCKFILE --lockfile-out=$CONAN_LOCKFILE
+          git diff --quiet -- $CONAN_LOCKFILE
+          echo "diff-status=$?" | tee -a "$GITHUB_OUTPUT"
 
       - name: Commit changes to ${{ env.CONAN_LOCKFILE }}
+        if: ${{ steps.update-lockfile.outputs.diff-status == '1' }}
         env:
           CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
+          # configure git
           git config --local user.name "$AUTHOR_NAME"
           git config --local user.email "$AUTHOR_EMAIL"
+          git config --unset "http.https://github.com/.extraheader"
+          git remote set-url origin "https://x-access-token:${{secrets.PAT_CONTENTS_RW_EXOCORTIC}}@github.com/${{ github.repository }}.git/"
+
+          # stage lock file and commit
           git add $CONAN_LOCKFILE
           git commit -m "Update $CONAN_LOCKFILE: require $DEP_REQUIRES"
-          git push https://${{ github.actor }}:${{ secrets.PAT_CONTENTS_RW_EXOCORTIC }}@github.com/${{ github.repository }}.git
+
+          # push revision using PAT for auth
+          git push
