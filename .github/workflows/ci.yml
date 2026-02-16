@@ -61,18 +61,24 @@ jobs:
 
       - name: Commit changes to ${{ env.CONAN_LOCKFILE }}
         if: ${{ steps.update-lockfile.outputs.diff-status == '1' }}
-        env:
-          CONAN_HOME_BIN: ${{ steps.setup-conan.outputs.conan-home }}/bin
         run: |
           # configure git
           git config --local user.name "CI Bot"
           git config --local user.email "ci-bot-noreply@exocortical.systems"
           git config --unset "http.https://github.com/.extraheader"
-          git remote set-url origin "https://x-access-token:${{secrets.PAT_CONTENTS_RW_EXOCORTIC}}@github.com/${{ github.repository }}.git/"
+          echo "updated git config"
 
-          # stage lock file and commit
+          git remote set-url origin "https://x-access-token:${{secrets.PAT_CONTENTS_RW_EXOCORTIC}}@github.com/${{ github.repository }}.git/"
+          echo "set url for origin"
+
+          # stage lock file
           git add $CONAN_LOCKFILE
+          echo "staged $CONAN_LOCKFILE"
+
+          # commit changes
           git commit -m "Update $CONAN_LOCKFILE: require $DEP_REQUIRES"
+          echo "committed changes"
 
           # push revision using PAT for auth
           git push
+          echo "pushed revision"
