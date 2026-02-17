@@ -10,6 +10,7 @@
         "rapidjson/20250205.1@timbre#fe6fca5b54b376e09438f22140d1051e%1766014431.839301",
         "openssl/3.5.2@timbre#e15dd16e22df5db4a1eb0db52ac33dd0%1766013308.16403",
         "mustache/20250614.1@timbre#d49a5ab6455411dccce5aee2a2f4130e%1768589418.5385752",
+        "lyric/0.0.1#83e39dad086dff33154d57c2b1a8bbc64807d033",
         "lief/0.17.1@timbre#2fb6a3cca955ae8b67a37b45f3d0ebd4%1767067927.048353",
         "libedit/20250104.1@timbre#ffdc8c9142f6ec4b56df4eec094bc7d6%1766012944.513822",
         "jemalloc/5.3.0@timbre#2457dc8b60a1e34ad4ae25e034b084a4%1766012837.525446",
