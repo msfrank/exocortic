@@ -1,7 +1,7 @@
 {
     "version": "0.5",
     "requires": [
-        "zuri/0.0.1#fbbd1842d024684feaca69c7b977266353e0156f",
+        "zuri/0.0.1#b946edc0c9e7d02747813399ed8027c4a3a7c5c8",
         "uv/1.51.0@timbre#53c1db2a4224e4533dfef20754ee121a%1766015468.46875",
         "utfcpp/4.0.6@timbre#8fa91688bbde8d399074e2c4f4875acc%1766015409.894347",
         "tempo/0.0.1#1758b02fa992875a6a775ca42b51e06b8db99bac",
